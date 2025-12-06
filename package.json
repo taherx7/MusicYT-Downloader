@@ -49,17 +49,21 @@
       "**/*",
       "!node_modules/@electron/get/**/*"
     ],
+    "asarUnpack": [
+      "node_modules/yt-dlp-exec/**/*",
+      "node_modules/@ffmpeg-installer/**/*"
+    ],
     "win": {
       "target": "nsis",
-      "icon": "icon.png"
+      "icon": "image.png"
     },
     "mac": {
       "target": "dmg",
-      "icon": "icon.png"
+      "icon": "image.png"
     },
     "linux": {
       "target": "AppImage",
-      "icon": "icon.png"
+      "icon": "image.png"
     }
   }
 }
