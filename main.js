@@ -119,8 +119,8 @@ let mainWindow;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 600,
-    height: 550,
+    width: 800,
+    height: 700,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -472,6 +472,8 @@ async function handlePlaylistDownload(event, url, format) {
             output: outputPath,
             format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
             mergeOutputFormat: 'mp4',
+            embedMetadata: true,
+            embedThumbnail: true,
             ffmpegLocation: ffmpegPath
           });
 
