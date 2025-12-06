@@ -1,11 +1,114 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const ytdlp = require('yt-dlp-exec');
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
-const NodeID3 = require('node-id3');
 const https = require('https');
+const NodeID3 = require('node-id3');
+
+// LOGGING SETUP
+const { spawn } = require('child_process');
+const logFile = path.join(app.getPath('downloads'), 'musicyt-debug.log');
+const log = (msg) => {
+  try { fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { }
+};
+
+log(`App initiating. Packaged: ${app.isPackaged}`);
+
+// BINARY PATH SETUP
+let ytdlpBinaryPath;
+let ffmpegPath; // Keep variable name compatible with usage below
+
+if (app.isPackaged) {
+  const unpackedRoot = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules');
+  ytdlpBinaryPath = path.join(unpackedRoot, 'yt-dlp-exec', 'bin', 'yt-dlp.exe');
+  ffmpegPath = path.join(unpackedRoot, '@ffmpeg-installer', 'win32-x64', 'ffmpeg.exe');
+
+  log(`Packaged YTDLP: ${ytdlpBinaryPath} [Exists: ${fs.existsSync(ytdlpBinaryPath)}]`);
+  log(`Packaged FFMPEG: ${ffmpegPath} [Exists: ${fs.existsSync(ffmpegPath)}]`);
+
+  // Set Environment Variables for libraries
+  process.env.YT_DLP_BINARY = ytdlpBinaryPath;
+  process.env.YOUTUBE_DL_BINARY = ytdlpBinaryPath;
+} else {
+  // Dev mode
+  ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+}
+
+// Require libraries AFTER setting env
+// Custom YTDLP Wrapper to bypass library path issues
+const dargs = (options) => {
+  const args = [];
+  for (const [key, value] of Object.entries(options)) {
+    if (value === false || value === undefined || value === null) continue;
+    const flag = '--' + key.replace(/[A-Z]/g, m => '-' + m.toLowerCase());
+    if (value === true) args.push(flag);
+    else {
+      args.push(flag);
+      args.push(value.toString());
+    }
+  }
+  return args;
+};
+
+const ytdlpWrapper = (url, options = {}) => {
+  return new Promise((resolve, reject) => {
+    const bin = ytdlpBinaryPath || require('yt-dlp-exec').path;
+    const args = [url, ...dargs(options)];
+    log(`[Wrapper] Spawning: ${bin} ${args.join(' ')}`);
+
+    const child = spawn(bin, args);
+    let stdoutChunks = [];
+    let stderrChunks = [];
+
+    child.stdout.on('data', chunk => stdoutChunks.push(chunk));
+    child.stderr.on('data', chunk => stderrChunks.push(chunk));
+
+    child.on('close', (code) => {
+      const stdout = Buffer.concat(stdoutChunks).toString();
+      const stderr = Buffer.concat(stderrChunks).toString();
+
+      if (code === 0) {
+        try {
+          if (options.dumpSingleJson) resolve(JSON.parse(stdout));
+          else resolve(stdout);
+        } catch (e) { resolve(stdout); }
+      } else {
+        log(`[Wrapper] Error: ${stderr}`);
+        reject(new Error(stderr || 'Process failed'));
+      }
+    });
+
+    child.on('error', err => {
+      log(`[Wrapper] Spawn Error: ${err.message}`);
+      reject(err);
+    });
+  });
+};
+
+ytdlpWrapper.exec = (url, options = {}) => {
+  const bin = ytdlpBinaryPath || require('yt-dlp-exec').path;
+  const args = [url, ...dargs(options)];
+  log(`[Wrapper-Exec] Spawning: ${bin} ${args.join(' ')}`);
+
+  const child = spawn(bin, args);
+
+  // Make it awaitable
+  const promise = new Promise((resolve, reject) => {
+    child.on('close', code => {
+      if (code === 0) resolve(); else reject(new Error(`Exit code ${code}`));
+    });
+    child.on('error', reject);
+  });
+
+  Object.assign(child, {
+    then: promise.then.bind(promise),
+    catch: promise.catch.bind(promise)
+  });
+
+  return child;
+};
+
+const ytdlp = ytdlpWrapper;
+const ffmpeg = require('fluent-ffmpeg');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -203,6 +306,8 @@ ipcMain.on('start-download', async (event, { url, format }) => {
 
   } catch (error) {
     console.error('Download error:', error);
+    log(`Error downloading: ${error.message}`);
+    log(`Stack: ${error.stack}`);
 
     // Provide user-friendly error messages
     let userMessage = 'An error occurred during download';
