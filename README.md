@@ -103,14 +103,6 @@ Contributions are welcome! Here's how you can help:
 - Large videos (1GB+) may take time to download
 - Some region-restricted videos may not be accessible
 
-## 📝 Roadmap
-
-- [ ] Playlist download support
-- [ ] Quality selection (720p, 1080p, 4K)
-- [ ] Dark mode
-- [ ] Download history
-- [ ] Batch download multiple URLs
-- [ ] Custom output format options
 
 ## 📄 License
 
