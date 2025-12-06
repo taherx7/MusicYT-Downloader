@@ -31,6 +31,9 @@ if (app.isPackaged) {
 } else {
   // Dev mode
   ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+  // Fix: Explicitly get path for dev mode
+  // Fix: Explicitly set correct path for dev mode
+  ytdlpBinaryPath = path.join(__dirname, 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe');
 }
 
 // Require libraries AFTER setting env
@@ -163,7 +166,18 @@ async function downloadThumbnail(url, outputPath) {
 }
 
 // Handle download request
-ipcMain.on('start-download', async (event, { url, format }) => {
+// Handle download request
+ipcMain.on('start-download', async (event, { url, format, isPlaylist }) => {
+  console.log('Download request:', { url, format, isPlaylist });
+  if (isPlaylist) {
+    await handlePlaylistDownload(event, url, format);
+  } else {
+    await handleSingleDownload(event, url, format);
+  }
+});
+
+// Handle single video download
+async function handleSingleDownload(event, url, format) {
   let tempVideoPath = null;
   let tempAudioPath = null;
   let thumbnailPath = null;
@@ -337,4 +351,162 @@ ipcMain.on('start-download', async (event, { url, format }) => {
       }
     });
   }
-});
+}
+
+
+// Handle playlist download
+async function handlePlaylistDownload(event, url, format) {
+  try {
+    event.reply('download-status', 'Fetching playlist information...');
+
+    // Get playlist info
+    const playlistInfo = await ytdlp(url, {
+      flatPlaylist: true,
+      dumpSingleJson: true,
+      noWarnings: true
+    });
+
+    const videos = playlistInfo.entries || [];
+    const playlistTitle = playlistInfo.title || 'Playlist';
+
+    if (videos.length === 0) {
+      event.reply('download-error', 'No videos found in playlist');
+      return;
+    }
+
+    // Send playlist info to renderer
+    event.reply('playlist-info', {
+      title: playlistTitle,
+      count: videos.length
+    });
+
+    // Select folder for playlist downloads
+    const { filePaths } = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: `Select folder for "${playlistTitle}"`
+    });
+
+    if (!filePaths || filePaths.length === 0) {
+      event.reply('download-cancelled');
+      return;
+    }
+
+    const outputFolder = filePaths[0];
+    log(`Playlist download to: ${outputFolder}`);
+
+    // Download each video
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < videos.length; i++) {
+      const video = videos[i];
+      const videoUrl = `https://www.youtube.com/watch?v=${video.id}`;
+      const videoTitle = (video.title || `Video ${i + 1}`).replace(/[^\\w\\s-]/gi, '').trim();
+
+      try {
+        event.reply('download-status', `Downloading ${i + 1}/${videos.length}: ${videoTitle}`);
+        // Also send specific playlist item event if renderer supports it (optional)
+        event.reply('playlist-item', {
+          title: video.title || `Video ${i + 1}`,
+          current: i + 1,
+          total: videos.length
+        });
+
+        const outputPath = path.join(outputFolder, `${videoTitle}.${format}`);
+
+        if (format === 'mp4') {
+          // Download MP4
+          await ytdlp(videoUrl, {
+            output: outputPath,
+            format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+            mergeOutputFormat: 'mp4',
+            ffmpegLocation: ffmpegPath
+          });
+
+        } else if (format === 'mp3') {
+          // Download MP3 with metadata
+          const tempDir = app.getPath('temp');
+          const tempAudioPath = path.join(tempDir, `temp_audio_${Date.now()}.m4a`);
+          const thumbnailPath = path.join(tempDir, `thumbnail_${Date.now()}.jpg`);
+
+          try {
+            await ytdlp(videoUrl, {
+              output: tempAudioPath,
+              format: 'bestaudio[ext=m4a]/bestaudio',
+              extractAudio: true,
+              audioFormat: 'm4a',
+              ffmpegLocation: ffmpegPath
+            });
+
+            // Download thumbnail
+            if (video.thumbnail) {
+              try {
+                await downloadThumbnail(video.thumbnail, thumbnailPath);
+              } catch (err) {
+                log(`Thumbnail download failed: ${err.message}`);
+              }
+            }
+
+            // Convert to MP3
+            await new Promise((resolve, reject) => {
+              ffmpeg(tempAudioPath)
+                .toFormat('mp3')
+                .audioBitrate('320k')
+                .on('end', resolve)
+                .on('error', reject)
+                .save(outputPath);
+            });
+
+            // Add metadata
+            const tags = {
+              title: video.title,
+              artist: video.uploader || 'Unknown Artist',
+              album: playlistTitle,
+              year: video.upload_date ? video.upload_date.substring(0, 4) : new Date().getFullYear().toString()
+            };
+
+            if (fs.existsSync(thumbnailPath)) {
+              tags.image = {
+                mime: 'image/jpeg',
+                type: { id: 3, name: 'front cover' },
+                description: 'Cover',
+                imageBuffer: fs.readFileSync(thumbnailPath)
+              };
+            }
+
+            NodeID3.write(tags, outputPath);
+
+            // Cleanup
+            [tempAudioPath, thumbnailPath].forEach(file => {
+              if (file && fs.existsSync(file)) {
+                try { fs.unlinkSync(file); } catch (e) { }
+              }
+            });
+
+          } catch (err) {
+            log(`MP3 conversion error: ${err.message}`);
+            throw err;
+          }
+        }
+
+        successCount++;
+        log(`Downloaded ${i + 1}/${videos.length}: ${videoTitle}`);
+
+      } catch (error) {
+        failCount++;
+        log(`Failed to download video ${i + 1}: ${error.message}`);
+        // Continue with next video
+      }
+    }
+
+    // Send completion message
+    const summary = `Playlist download complete! ${successCount} succeeded, ${failCount} failed.`;
+    event.reply('download-complete', outputFolder);
+    event.reply('download-status', summary);
+
+  } catch (error) {
+    log(`Playlist download error: ${error.message}`);
+    log(`Stack: ${error.stack}`);
+    event.reply('download-error', 'Failed to download playlist: ' + error.message);
+  }
+}

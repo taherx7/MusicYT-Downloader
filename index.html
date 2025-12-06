@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -150,8 +151,13 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
 
         .message {
@@ -205,6 +211,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>🎥 YouTube Downloader</h1>
@@ -212,12 +219,12 @@
 
         <div class="input-group">
             <label for="url">YouTube URL</label>
-            <input 
-                type="text" 
-                id="url" 
-                placeholder="https://www.youtube.com/watch?v=..."
-                autocomplete="off"
-            >
+            <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+        </div>
+
+        <div class="input-group">
+            <input type="checkbox" id="playlistCheck" style="width: auto; margin-right: 10px;">
+            <label for="playlistCheck" style="display: inline;">Download as Playlist</label>
         </div>
 
         <div class="input-group">
@@ -250,4 +257,5 @@
 
     <script src="renderer.js"></script>
 </body>
+
 </html>

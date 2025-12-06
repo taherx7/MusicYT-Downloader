@@ -1,6 +1,7 @@
 const { ipcRenderer } = require('electron');
 
 const urlInput = document.getElementById('url');
+const playlistCheck = document.getElementById('playlistCheck');
 const formatSelect = document.getElementById('format');
 const downloadBtn = document.getElementById('downloadBtn');
 const spinner = document.getElementById('spinner');
@@ -28,10 +29,11 @@ downloadBtn.addEventListener('click', () => {
     return;
   }
 
-  startDownload(url, format);
+  const isPlaylist = playlistCheck.checked;
+  startDownload(url, format, isPlaylist);
 });
 
-function startDownload(url, format) {
+function startDownload(url, format, isPlaylist) {
   isDownloading = true;
   downloadBtn.disabled = true;
   downloadBtn.textContent = 'Downloading...';
@@ -39,7 +41,7 @@ function startDownload(url, format) {
   progressContainer.style.display = 'none';
   message.style.display = 'none';
 
-  ipcRenderer.send('start-download', { url, format });
+  ipcRenderer.send('start-download', { url, format, isPlaylist });
 }
 
 function resetUI() {
