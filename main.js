@@ -4,7 +4,6 @@ const fs = require('fs');
 const https = require('https');
 const NodeID3 = require('node-id3');
 
-// LOGGING SETUP
 const { spawn } = require('child_process');
 const logFile = path.join(app.getPath('downloads'), 'musicyt-debug.log');
 const log = (msg) => {
@@ -13,9 +12,8 @@ const log = (msg) => {
 
 log(`App initiating. Packaged: ${app.isPackaged}`);
 
-// BINARY PATH SETUP
 let ytdlpBinaryPath;
-let ffmpegPath; // Keep variable name compatible with usage below
+let ffmpegPath;
 
 if (app.isPackaged) {
   const unpackedRoot = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules');
@@ -25,19 +23,13 @@ if (app.isPackaged) {
   log(`Packaged YTDLP: ${ytdlpBinaryPath} [Exists: ${fs.existsSync(ytdlpBinaryPath)}]`);
   log(`Packaged FFMPEG: ${ffmpegPath} [Exists: ${fs.existsSync(ffmpegPath)}]`);
 
-  // Set Environment Variables for libraries
   process.env.YT_DLP_BINARY = ytdlpBinaryPath;
   process.env.YOUTUBE_DL_BINARY = ytdlpBinaryPath;
 } else {
-  // Dev mode
   ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
-  // Fix: Explicitly get path for dev mode
-  // Fix: Explicitly set correct path for dev mode
   ytdlpBinaryPath = path.join(__dirname, 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe');
 }
 
-// Require libraries AFTER setting env
-// Custom YTDLP Wrapper to bypass library path issues
 const dargs = (options) => {
   const args = [];
   for (const [key, value] of Object.entries(options)) {
@@ -94,7 +86,6 @@ ytdlpWrapper.exec = (url, options = {}) => {
 
   const child = spawn(bin, args);
 
-  // Make it awaitable
   const promise = new Promise((resolve, reject) => {
     child.on('close', code => {
       if (code === 0) resolve(); else reject(new Error(`Exit code ${code}`));
@@ -129,9 +120,6 @@ function createWindow() {
   });
 
   mainWindow.loadFile('index.html');
-
-  // Open DevTools in development
-  // mainWindow.webContents.openDevTools();
 }
 
 app.whenReady().then(createWindow);
@@ -148,7 +136,6 @@ app.on('activate', () => {
   }
 });
 
-// Download thumbnail
 async function downloadThumbnail(url, outputPath) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(outputPath);
@@ -165,8 +152,6 @@ async function downloadThumbnail(url, outputPath) {
   });
 }
 
-// Rename files based on ID3 tags
-// Helper to get title from MP4/media via ffmpeg
 async function getTitleFromMetadata(filePath) {
   return new Promise((resolve) => {
     try {
@@ -174,7 +159,6 @@ async function getTitleFromMetadata(filePath) {
       let stderr = '';
       child.stderr.on('data', d => stderr += d.toString());
       child.on('close', () => {
-        // Match "title : Some Value" in ffmpeg stderr
         const match = stderr.match(/^\s*title\s*:\s*(.+)$/m);
         if (match && match[1]) resolve(match[1].trim());
         else resolve(null);
@@ -184,7 +168,6 @@ async function getTitleFromMetadata(filePath) {
   });
 }
 
-// Rename files based on ID3 tags (MP3) or Metadata (MP4)
 async function renameFilesFromTags(videoDir) {
   try {
     const files = fs.readdirSync(videoDir);
@@ -212,7 +195,6 @@ async function renameFilesFromTags(videoDir) {
         if (filePath !== newFilePath) {
           try {
             if (fs.existsSync(newFilePath)) {
-              // Handle duplicates
               let counter = 1;
               let tempPath = newFilePath;
               while (fs.existsSync(tempPath)) {
@@ -236,8 +218,6 @@ async function renameFilesFromTags(videoDir) {
   }
 }
 
-// Handle download request
-// Handle download request
 ipcMain.on('start-download', async (event, { url, format, isPlaylist }) => {
   console.log('Download request:', { url, format, isPlaylist });
   if (isPlaylist) {
@@ -247,7 +227,6 @@ ipcMain.on('start-download', async (event, { url, format, isPlaylist }) => {
   }
 });
 
-// Handle single video download
 async function handleSingleDownload(event, url, format) {
   let tempVideoPath = null;
   let tempAudioPath = null;
@@ -256,7 +235,6 @@ async function handleSingleDownload(event, url, format) {
   try {
     event.reply('download-status', 'Fetching video information...');
 
-    // Get video info
     const info = await ytdlp(url, {
       dumpSingleJson: true,
       noWarnings: true,
@@ -268,7 +246,6 @@ async function handleSingleDownload(event, url, format) {
     const artist = info.uploader || 'Unknown Artist';
     const thumbnail = info.thumbnail;
 
-    // Select save location
     const { filePath } = await dialog.showSaveDialog(mainWindow, {
       defaultPath: `${title}.${format}`,
       filters: [
@@ -282,15 +259,13 @@ async function handleSingleDownload(event, url, format) {
     }
 
     const tempDir = app.getPath('temp');
-    tempVideoPath = null; // Not used for MP4 anymore
+    tempVideoPath = null;
     tempAudioPath = path.join(tempDir, `temp_audio_${Date.now()}.m4a`);
     thumbnailPath = path.join(tempDir, `thumbnail_${Date.now()}.jpg`);
 
     if (format === 'mp4') {
-      // Download MP4 (video + audio)
       event.reply('download-status', 'Downloading video...');
 
-      // Use a simpler output format without template
       const simpleOutputPath = filePath;
 
       const ytdlpProcess = ytdlp.exec(url, {
@@ -300,10 +275,8 @@ async function handleSingleDownload(event, url, format) {
         ffmpegLocation: ffmpegPath
       });
 
-      // Parse progress from stdout
       ytdlpProcess.stdout.on('data', (data) => {
         const output = data.toString();
-        // Match pattern like "[download] 28.9% of 881.15KiB"
         const progressMatch = output.match(/\[download\]\s+(\d+\.\d+)%/);
         if (progressMatch) {
           const percent = Math.round(parseFloat(progressMatch[1]));
@@ -317,7 +290,6 @@ async function handleSingleDownload(event, url, format) {
       event.reply('download-complete', filePath);
 
     } else if (format === 'mp3') {
-      // Download MP3 (audio only with metadata)
       event.reply('download-status', 'Downloading audio...');
 
       await ytdlp(url, {
@@ -328,7 +300,6 @@ async function handleSingleDownload(event, url, format) {
         ffmpegLocation: ffmpegPath
       });
 
-      // Download thumbnail
       event.reply('download-status', 'Downloading cover art...');
       try {
         await downloadThumbnail(thumbnail, thumbnailPath);
@@ -338,7 +309,6 @@ async function handleSingleDownload(event, url, format) {
 
       event.reply('download-status', 'Converting to MP3 and adding metadata...');
 
-      // Convert to MP3 with ffmpeg
       await new Promise((resolve, reject) => {
         ffmpeg(tempAudioPath)
           .toFormat('mp3')
@@ -353,7 +323,6 @@ async function handleSingleDownload(event, url, format) {
           .save(filePath);
       });
 
-      // Add metadata and cover art
       event.reply('download-status', 'Adding metadata and cover art...');
 
       const tags = {
@@ -367,7 +336,6 @@ async function handleSingleDownload(event, url, format) {
         }
       };
 
-      // Add cover art if thumbnail was downloaded
       if (fs.existsSync(thumbnailPath)) {
         tags.image = {
           mime: 'image/jpeg',
@@ -394,7 +362,6 @@ async function handleSingleDownload(event, url, format) {
     log(`Error downloading: ${error.message}`);
     log(`Stack: ${error.stack}`);
 
-    // Provide user-friendly error messages
     let userMessage = 'An error occurred during download';
 
     if (error.message && error.message.includes('Unsupported URL')) {
@@ -411,7 +378,6 @@ async function handleSingleDownload(event, url, format) {
 
     event.reply('download-error', userMessage);
   } finally {
-    // Cleanup temp files
     [tempAudioPath, thumbnailPath].forEach(file => {
       if (file && fs.existsSync(file)) {
         try {
@@ -424,13 +390,10 @@ async function handleSingleDownload(event, url, format) {
   }
 }
 
-
-// Handle playlist download
 async function handlePlaylistDownload(event, url, format) {
   try {
     event.reply('download-status', 'Fetching playlist information...');
 
-    // Get playlist info
     const playlistInfo = await ytdlp(url, {
       flatPlaylist: true,
       dumpSingleJson: true,
@@ -445,13 +408,11 @@ async function handlePlaylistDownload(event, url, format) {
       return;
     }
 
-    // Send playlist info to renderer
     event.reply('playlist-info', {
       title: playlistTitle,
       count: videos.length
     });
 
-    // Select folder for playlist downloads
     const { filePaths } = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory'],
       title: `Select folder for "${playlistTitle}"`
@@ -465,7 +426,6 @@ async function handlePlaylistDownload(event, url, format) {
     const outputFolder = filePaths[0];
     log(`Playlist download to: ${outputFolder}`);
 
-    // Download each video
     let successCount = 0;
     let failCount = 0;
 
@@ -473,18 +433,16 @@ async function handlePlaylistDownload(event, url, format) {
       const videoEntry = videos[i];
       const videoUrl = `https://www.youtube.com/watch?v=${videoEntry.id}`;
 
-      // Fetch full video info
       event.reply('download-status', `Fetching info for ${i + 1}/${videos.length}...`);
       const video = await ytdlp(videoUrl, {
         dumpSingleJson: true,
         noWarnings: true,
         noCheckCertificate: true
       });
-      const videoTitle = (video.title || `Video ${i + 1}`).replace(/[^\\w\\s-]/gi, '').trim();
+      const videoTitle = (video.title || `Video ${i + 1}`).replace(/[^\w\s-]/gi, '').trim();
 
       try {
         event.reply('download-status', `Downloading ${i + 1}/${videos.length}: ${videoTitle}`);
-        // Also send specific playlist item event if renderer supports it (optional)
         event.reply('playlist-item', {
           title: video.title || `Video ${i + 1}`,
           current: i + 1,
@@ -494,7 +452,6 @@ async function handlePlaylistDownload(event, url, format) {
         const outputPath = path.join(outputFolder, `${videoTitle}.${format}`);
 
         if (format === 'mp4') {
-          // Download MP4
           await ytdlp(videoUrl, {
             output: outputPath,
             format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
@@ -505,7 +462,6 @@ async function handlePlaylistDownload(event, url, format) {
           });
 
         } else if (format === 'mp3') {
-          // Download MP3 with metadata
           const tempDir = app.getPath('temp');
           const tempAudioPath = path.join(tempDir, `temp_audio_${Date.now()}.m4a`);
           const thumbnailPath = path.join(tempDir, `thumbnail_${Date.now()}.jpg`);
@@ -519,7 +475,6 @@ async function handlePlaylistDownload(event, url, format) {
               ffmpegLocation: ffmpegPath
             });
 
-            // Download thumbnail
             if (video.thumbnail) {
               try {
                 await downloadThumbnail(video.thumbnail, thumbnailPath);
@@ -528,7 +483,6 @@ async function handlePlaylistDownload(event, url, format) {
               }
             }
 
-            // Convert to MP3
             await new Promise((resolve, reject) => {
               ffmpeg(tempAudioPath)
                 .toFormat('mp3')
@@ -538,7 +492,6 @@ async function handlePlaylistDownload(event, url, format) {
                 .save(outputPath);
             });
 
-            // Add metadata
             const tags = {
               title: video.title,
               artist: video.uploader || 'Unknown Artist',
@@ -557,7 +510,6 @@ async function handlePlaylistDownload(event, url, format) {
 
             NodeID3.write(tags, outputPath);
 
-            // Cleanup
             [tempAudioPath, thumbnailPath].forEach(file => {
               if (file && fs.existsSync(file)) {
                 try { fs.unlinkSync(file); } catch (e) { }
@@ -576,15 +528,12 @@ async function handlePlaylistDownload(event, url, format) {
       } catch (error) {
         failCount++;
         log(`Failed to download video ${i + 1}: ${error.message}`);
-        // Continue with next video
       }
     }
 
-    // Rename files to match tags
     event.reply('download-status', 'Verifying filenames...');
     await renameFilesFromTags(outputFolder);
 
-    // Send completion message
     const summary = `Playlist download complete! ${successCount} succeeded, ${failCount} failed.`;
     event.reply('download-complete', outputFolder);
     event.reply('download-status', summary);

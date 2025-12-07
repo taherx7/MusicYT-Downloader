@@ -61,7 +61,6 @@ function showMessage(text, type) {
   message.style.display = 'block';
 }
 
-// Listen for download events
 ipcRenderer.on('download-status', (event, status) => {
   spinner.style.display = 'none';
   progressContainer.style.display = 'block';
@@ -88,7 +87,6 @@ ipcRenderer.on('download-cancelled', () => {
   showMessage('Download cancelled', 'error');
 });
 
-// Clear message when user starts typing
 urlInput.addEventListener('input', () => {
   if (message.style.display === 'block') {
     message.style.display = 'none';
